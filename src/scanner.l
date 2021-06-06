@@ -3,6 +3,7 @@
 #include<stdio.h>
 #include<string>
 
+
 %}
 
 NQUOTE [^']
@@ -11,91 +12,203 @@ NQUOTE [^']
 
 %%
 
-"("     
-")"     
-"["     
-"]"     
-"."   
-".."   
-";"     
-","     
-":"     
-"*"     
-"/"     
-"+"     
-"-"    
-">="    
-">"     
-"<="   
-"<"    
-"<>"    
-"="     
-":="    
+"("     {return LP;}
+")"     {return RP;}
+"["     {return LB;}
+"]"     {return RB;}
+"."     {return DOT;}
+".."    {return DOTDOT;}
+";"     {return SEMI;}
+","     {return COMMA;}
+":"     {return COLON;}
+"*"     {return MUL;}
+"/"     {return TRUEDIV;}
+"+"     {return PLUS;}
+"-"     {return MINUS;}
+">="    {return GE;}
+">"     {return GT;}
+"<="    {return LE;}
+"<"     {return LT;}
+"<>"    {return UNEQUAL;}
+"=="     {return EQUAL;}
+"="    {return ASSIGN;}  
 
-"AND"       
-"ARRAY"     
-"CASE"      
-"CONST"   
-"DIV"     
-"MOD"       
-"DO"        
-"DOWNTO"   
-"ELSE"     
-"END"      
-"FOR"       
-"FUNCTION"  
-"GOTO"      
-"IF"       
-"NOT"      
-"OF"        
-"OR"       
-"XOR"      
-"BEGIN"     
-"PROCEDURE" 
-"PROGRAM"   
-"READLN"     
-"READ"     
-"REPEAT"   
-"THEN"      
-"TO"       
-"TYPE"     
-"UNTIL"     
-"VAR"       
-"WHILE"     
-"RECORD"    
-"FALSE"     
-"MAXINT"   
-"TRUE"      
-"ABS"      
-"CHR"      
-"CONCAT"      
-"LENGTH"      
-"ODD"       
-"ORD"      
-"PRED"     
-"SQR"      
-"SQRT"      
-"STR"     
-"SUCC"     
-"VAL"    
-"WRITE"    
-"WRITELN"  
-"BOOLEAN"  
-"CHAR"     
-"INTEGER"  
-"LONGINT"   
-"REAL"    
-"STRING"  
-[a-zA-Z_]([a-zA-Z0-9_])*  {
-    /* std::cout << "IDD: " << yytext << " "; */
-    yytext[yyleng] = 0;
-    yylval->build<std::shared_ptr<IdentifierNode>>(make_node<IdentifierNode>(yytext));  
-    return token::ID;
+"AND"       { std::cout << yytext;   return AND;}
+"ARRAY"     { std::cout << yytext;   return ARRAY;}
+"CASE"      { std::cout << yytext;   return CASE;}
+"CONST"     { std::cout << yytext;   return CONST;}
+"DIV"       { std::cout << yytext;   return DIV;}
+"MOD"       { std::cout << yytext;   return MOD;}
+"DO"        { std::cout << yytext;   return DO;}
+"DOWNTO"    {
+     std::cout << yytext;   
+    return DOWNTO;
 }
-"(*" 
-"{" 
-"//" 
-. 
+"ELSE"      { std::cout << yytext;   return ELSE;}
+"END"       { std::cout << yytext;   return END;}
+"FOR"       { std::cout << yytext;   return FOR;}
+"FUNCTION"  { std::cout << yytext;   return FUNCTION;}
+"GOTO"      { std::cout << yytext;   return GOTO;}
+"IF"        { std::cout << yytext;   return IF;}
+"NOT"       { std::cout << yytext;   return NOT;}
+"OF"        { std::cout << yytext;   return OF;}
+"OR"        { std::cout << yytext;   return OR;}
+"XOR"       { std::cout << yytext;   return XOR;}
+"BEGIN"     { std::cout << yytext;   return PBEGIN;}
+"PROCEDURE" { std::cout << yytext;   return PROCEDURE;}
+"PROGRAM"   { std::cout << yytext;   return PROGRAM;}
+"READLN"      {
+     std::cout << yytext;   
+    return SYS_PROC;
+}
+"READ"      {
+     std::cout << yytext;   
+    return SYS_PROC;
+}
+"REPEAT"    { std::cout << yytext;   return REPEAT;}
+"THEN"      { std::cout << yytext;   return THEN;}
+"TO"        {
+    std::cout << yytext;  
+    return TO;
+}
+"TYPE"      { std::cout << yytext;   return TYPE;}
+"UNTIL"     { std::cout << yytext;   return UNTIL;}
+"VAR"       { std::cout << yytext;   return VAR;}
+"WHILE"     { std::cout << yytext;   return WHILE;}
+"RECORD"    { std::cout << yytext;   return RECORD;}
+
+"FALSE"     {
+    std::cout << yytext;  
+    return SYS_CON;
+}
+"MAXINT"    {
+    std::cout << yytext;  
+    return SYS_CON;
+}
+"TRUE"      {
+    std::cout << yytext;  
+    return SYS_CON;
+}
+"ABS"       {
+    std::cout << yytext; 
+    return SYS_FUNCT;
+}
+"CHR"       {
+     std::cout << yytext;  
+    return SYS_FUNCT;
+}
+"CONCAT"       {
+    std::cout << yytext;  
+    return SYS_FUNCT;
+}
+"LENGTH"       {
+     std::cout << yytext;  
+    return SYS_FUNCT;
+}
+"ODD"       {
+     std::cout << yytext;  
+    return SYS_FUNCT;
+}
+"ORD"       {
+     std::cout << yytext;  
+    return SYS_FUNCT;
+}
+"PRED"      {
+         std::cout << yytext;  
+    return SYS_FUNCT;
+}
+"SQR"       {
+     std::cout << yytext;  
+    return SYS_FUNCT;
+}
+"SQRT"      {
+     std::cout << yytext;  
+    return SYS_FUNCT;
+}
+"STR"      {
+     std::cout << yytext;  
+    return SYS_FUNCT;
+}
+"SUCC"      {
+     std::cout << yytext;  
+    return SYS_FUNCT;
+}
+"VAL"     {
+     std::cout << yytext;  
+    return SYS_FUNCT;
+}
+"WRITE"     {
+     std::cout << yytext;  
+    return SYS_PROC;
+}
+"WRITELN"   {
+     std::cout << yytext;  
+    return SYS_PROC;
+}
+
+"BOOLEAN"   {
+     std::cout << yytext;  
+    return SYS_TYPE;
+}
+"CHAR"      {
+     std::cout << yytext;  
+    return SYS_TYPE;
+}
+"INTEGER"   {
+     std::cout << yytext;  
+    return SYS_TYPE;
+}
+"LONGINT"   {
+     std::cout << yytext;  
+    return SYS_TYPE;
+}
+"REAL"      {
+     std::cout << yytext; 
+    return SYS_TYPE;
+}
+"STRING"    {
+     std::cout << yytext; 
+    return STR_TYPE;
+}
+
+[+-]?[0-9]+      {
+     std::cout << "Integer: " << yytext; 
+    return INTEGER;
+}
+[+-]?[0-9]+"."[0-9]+("e"[+-]?[0-9]+)?   {
+     std::cout << "Real Number: " << yytext; 
+    return REAL;
+}
+'{NQUOTE}'  {
+     std::cout << "CHAR: " << yytext; 
+    return CHAR;
+}
+'({NQUOTE}|'')+'  {
+     std::cout << "STRING: " << yytext; 
+    yytext[yyleng-1] = 0; 
+    return STRING;
+}
+[a-zA-Z_]([a-zA-Z0-9_])*  {
+     std::cout << "IDD: " << yytext << " "; 
+    yytext[yyleng] = 0;
+    return ID;
+}
+[ \t\f]    { std::cout << ' ';  continue;}
+[\n\r]     { std::cout << std::endl;  }
+
+"(*" {
+   
+}
+"{" {
+    
+}
+"//" {
+    
+}
+
+. {
+    std::cout<< "error\n";);
+}
 
 %%
 
