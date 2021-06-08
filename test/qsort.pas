@@ -1,9 +1,10 @@
+program main;
 var
-        n,i:longint;
+        n,i:integer;
         a:array[0..2000000]of qword;
 procedure kp(l,r:longint);
 var
-        i,j,mid:longint;
+        i,j,mid:integer;
 begin
         if l>=r then exit;
                 i:=l;j:=r;mid:=a[(l+r) div 2];
