@@ -68,59 +68,130 @@
 
 %%
 
-program: program_head initial routine DOT{
+//TODO:
+program: program_head routine DOT{
         printf("program: program_head routine DOT\n");
     }
     ;
-
+//TODO:
 program_head: PROGRAM ID SEMI{
         printf("program_head: PROGRAM ID SEMI\n");
     }
     ;
-
+//TODO:
+routine: routine_head initial routine_body {
+        printf("routine: routine_head routine_body\n");
+    }
+    ;
+//TODO:
+routine_head: const_part type_part var_part routine_part  {
+        printf("routine: const_part type_part var_part routine_part\n");
+    }
+    ;
+//TODO:
 initial:INIT  initial_body  INITEND{
         printf("inital: INIT  initial_body  INITEND\n");
     }
     ;
-
-initial_body: initial_body proc_stmt{
-        printf("initial_body : initial_body proc_stmt\n");
+//TODO:
+initial_body: initial_body proc_stmt SEMI{
+        printf("initial_body : initial_body stmt_list\n");
     }
     | {printf("initial_body : empty\n");}
     ;
 
-routine: routine_head routine_body {
-        printf("routine: routine_head routine_body\n");
-    }
+
+//TODO:
+const_value: INTEGER {printf("const_value: INTEGER\n");}
+    | REAL    {printf("const_value: REAL\n");}
+    | CHAR    {printf("const_value: CHAR\n");}
+    | STRING  {printf("const_value: STRING\n");}
+    | SYS_CON {printf("const_value: SYS_CON\n");}
     ;
 
-routine_head: const_part type_part var_part routine_part {
-        printf("routine: const_part type_part var_part routine_part\n");
+
+//TODO:
+type_decl: simple_type_decl{
+        printf("type_decl: simple_type_decl\n");
     }
+    | array_type_decl {printf("type_decl: array_type_decl\n");}
+    | record_type_decl {printf("type_decl: record_type_decl\n");}
     ;
 
+//TODO:
+simple_type_decl: SYS_TYPE {printf("simple_type_decl: SYS_TYPE\n");}
+    | ID {printf("simple_type_decl: SYS_TYPE\n");}
+    | LP name_list RP {printf("simple_type_decl: LP name_list RP\n");}
+    ;
+
+array_type_decl: ARRAY LB array_range RB OF type_decl {
+        printf("array_type_decl: ARRAY LB array_range RB OF type_decl\n");
+    }
+    ;
+//TODO:
+array_range: const_value DOTDOT const_value
+        { printf("array_range: const_value DOTDOT const_value\n"); }
+    | ID DOTDOT ID
+        { printf("array_range: ID DOTDOT ID\n"); }
+    ;
+
+//TODO:
+name_list: name_list COMMA ID {
+        printf("name_list: name_list COMMA ID\n");
+    }
+    | ID {printf("name_list: ID\n");}
+    ;
+//TODO:
+var_part: VAR var_decl_list {printf("var_part: VAR var_decl_list\n");}
+    | {printf("var_part: empty\n");}
+    ;
+//TODO:
+var_decl_list: var_decl_list var_decl {
+        printf("var_decl_list: var_decl_list var_decl\n");
+    }
+    | var_decl {printf("var_decl_list: var_decl\n");}
+    ;
+//TODO:
+var_decl: name_list COLON type_decl SEMI {
+        printf("var_decl: name_list COLON type_decl SEMI\n");
+    }
+    ;
+//TODO:
+routine_part: routine_part function_decl { 
+        printf("routine_part: routine_part function_decl\n");}
+    | routine_part procedure_decl {printf("routine_part: routine_part procedure_decl\n");}
+    | {printf("routine_part: empty\n");}
+    ;
+
+
+//TODO:
 routine_body: compound_stmt {
         printf("routine_body: compound_stmt\n");
     }
     ;
-
+//TODO:
 compound_stmt: PBEGIN stmt_list END {
         printf("compound_stmt: PBEGIN stmt_list END\n");
     }
     ;
-
+//TODO:
 stmt_list: stmt_list stmt SEMI {
         printf("stmt_list: stmt_list stmt SEMI\n");
     }
     | {printf("stmt_list: empty\n");}
     ;
-
+//TODO:
 stmt: assign_stmt {printf("stmt: assign_stmt\n");}
     | proc_stmt {printf("stmt_list: proc_stmt\n");}
     | compound_stmt {printf("stmt_list: compound_stmt\n");}
+    | if_stmt {printf("stmt_list: if_stmt\n");}
+    | repeat_stmt {printf("stmt_list: repeat_stmt\n");}
+    | while_stmt {printf("stmt_list: while_stmt\n");}
     | for_stmt {printf("stmt_list: for_stmt\n");}
+    | case_stmt {printf("stmt_list: case_stmt\n");}
+    | goto_stmt {printf("stmt_list: goto_stmt\n");}
     ;
-
+//TODO:
 assign_stmt: ID ASSIGN expression {
         printf("assign_stmt: ID ASSIGN expression\n");
     }
@@ -131,7 +202,7 @@ assign_stmt: ID ASSIGN expression {
         printf("stmt_list: ID DOT ID ASSIGN expression\n");
     }
     ;
-
+//TODO:
 proc_stmt: ID { printf("proc_stmt: ID\n"); }
     | ID LP args_list RP
         { printf("proc_stmt: ID LP args_list RP\n"); }
@@ -143,8 +214,61 @@ proc_stmt: ID { printf("proc_stmt: ID\n"); }
         { printf("proc_stmt: READ LP factor RP\n"); }
     ;
 
+
+//TODO:
 for_stmt: FOR ID ASSIGN expression direction expression DO stmt {
         printf("for_stmt: FOR ID ASSIGN expression direction expression DO stmt\n");
+    }
+    ;
+
+
+//TODO:
+expression: expression GE expr { printf("expression: expression GE expr\n"); }
+    | expression GT expr { printf("expression: expression GT expr\n"); }
+    | expression LE expr { printf("expression: expression LE expr\n"); }
+    | expression LT expr { printf("expression: expression LT expr\n"); }
+    | expression EQUAL expr { printf("expression: expression EQUAL expr\n"); }
+    | expression UNEQUAL expr { printf("expression: expression UNEQUAL expr\n"); }
+    | expr { printf("expression: expr\n"); }
+    ;
+//TODO:
+expr: expr PLUS term { printf("expr: expr PLUS term\n"); }
+    | expr MINUS term { printf("expr: expr MINUS term\n"); }
+    | expr OR term { printf("expr: expr OR term\n"); }
+    | expr XOR term { printf("expr: expr XOR term\n"); }
+    | term { printf("expr: term\n"); }
+    ;
+//TODO:
+term: term MUL factor { printf("term: term MUL factor\n"); }
+    | term DIV factor { printf("term: term DIV factor\n"); }
+    | term MOD factor { printf("term: term MOD factor\n"); }
+    | term AND factor { printf("term: term AND factor\n"); }
+    | term TRUEDIV factor { printf("term: term TRUEDIV factor\n");  }
+    | factor { printf("term: factor\n"); }
+    ;
+//TODO:
+factor: ID { printf("factor: ID\n"); }
+    | ID LP args_list RP
+        { printf("factor: ID LP args_list RP\n"); }
+    | SYS_FUNCT LP args_list RP
+        { printf("factor: SYS_FUNCT LP args_list RP\n"); }
+    | const_value { printf("factor: const_value \n"); }
+    | LP expression RP { printf("factor: LP expression RP\n"); }
+    | NOT factor
+        { printf("factor: NOT factor\n"); }
+    | MINUS factor
+        { printf("factor: MINUS factor\n"); }
+    | ID LB expression RB
+        { printf("factor: ID LB expression RB\n"); }
+    | ID DOT ID
+        { printf("factor: ID DOT ID\n"); }
+    ;
+
+args_list: args_list COMMA expression {
+        printf("args_list: args_list COMMA expression\n");
+    }
+    | expression {
+        printf("args_list: expression\n");
     }
     ;
 
