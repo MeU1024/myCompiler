@@ -38,10 +38,14 @@ else begin
                 m := (i - 1 ) * b + k;
                 n := (k - 1 ) * d + j;
                 f[tmp]:=f[tmp]+x[m]*y[n];
-            end;        
-        write(f[tmp]:10);
+            end;
+            if tmp mod d = 0 then begin
+                writeln(f[tmp]);
+            end
+            else begin        
+                write(f[tmp]);
+            end;
         end;
-        writeln('');
     end;
 
 end;
