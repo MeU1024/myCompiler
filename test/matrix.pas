@@ -1,13 +1,12 @@
 program main;
 var
-    a,b,c,i,j,k,tmp,m,n:integer;
-    x,y,f:array[1..100] of integer;
+    a,b,c,d,i,j,k,tmp,m,n:longint;
+    x,y,f:array[1..10000] of longint;
 
 begin
 
 read(a);
 read(b);
-read(c);
 
 for i:=1 to a do begin
     for j:=1 to b do begin
@@ -16,26 +15,36 @@ for i:=1 to a do begin
     end;
 end;
 
-for i:=1 to b do begin
-    for j:=1 to c do begin
-        tmp := (i - 1) * c + j;
+read(c);
+read(d);
+
+for i:=1 to c do begin
+    for j:=1 to d do begin
+        tmp := (i - 1) * d + j;
         read(y[tmp]);
     end;
 end;
 
-//writeln(a,' ',c);
+if b<>c then begin
+    writeln('Incompatible Dimensions');
+    end
+else begin
 
-for i:=1 to a do begin
-    for j:=1 to c do begin
-        tmp := (i - 1) * c + j;
-        f[tmp] := 0;
-        for k:=1 to b do begin
-            m := (i - 1 ) * b + k;
-            n := (k - 1 ) * c + j;
-            f[tmp]:=f[tmp]+x[m]*y[n];
-        end;        
-    write(f[tmp],' ');
+    for i:=1 to a do begin
+        for j:=1 to d do begin
+            tmp := (i - 1) * d + j;
+            f[tmp] := 0;
+            for k:=1 to b do begin
+                m := (i - 1 ) * b + k;
+                n := (k - 1 ) * d + j;
+                f[tmp]:=f[tmp]+x[m]*y[n];
+            end;        
+        write(f[tmp]:10);
+        end;
+        writeln('');
     end;
-end;
 
+end;
 end. 
+
+//read改名input
