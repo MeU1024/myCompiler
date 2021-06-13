@@ -1,9 +1,13 @@
 %{
 #include<iostream>
 #include<stdio.h>
-#include<string>
+#include<string>    
+#include "parser.tab.hpp"
 
+#undef YY_DECL
+#define YY_DECL int yylex(fpc::parser::semantic_type* lval, fpc::parser::location_type* loc)
 
+using id = fpc::parser::token::yytokentype;
 %}
 
 NQUOTE [^']
@@ -11,204 +15,135 @@ NQUOTE [^']
 %option noyywrap
 
 %%
+%{
+    fpc::parser::semantic_type* yylval = lval;
+%}
 
-"("     {return LP;}
-")"     {return RP;}
-"["     {return LB;}
-"]"     {return RB;}
-"."     {return DOT;}
-".."    {return DOTDOT;}
-";"     {return SEMI;}
-","     {return COMMA;}
-":"     {return COLON;}
-"*"     {return MUL;}
-"/"     {return TRUEDIV;}
-"+"     {return PLUS;}
-"-"     {return MINUS;}
-">="    {return GE;}
-">"     {return GT;}
-"<="    {return LE;}
-"<"     {return LT;}
-"<>"    {return UNEQUAL;}
-"=="     {return EQUAL;}
-"="    {return ASSIGN;}  
+"("     {return id::LP;}
+")"     {return id::RP;}
+"["     {return id::LB;}
+"]"     {return id::RB;}
+"."     {return id::DOT;}
+".."    {return id::DOTDOT;}
+";"     {return id::SEMI;}
+","     {return id::COMMA;}
+":"     {return id::COLON;}
+"*"     {return id::MUL;}
+"/"     {return id::TRUEDIV;}
+"+"     {return id::PLUS;}
+"-"     {return id::MINUS;}
+">="    {return id::GE;}
+">"     {return id::GT;}
+"<="    {return id::LE;}
+"<"     {return id::LT;}
+"<>"    {return id::UNEQUAL;}
+"="     {return id::EQUAL;}
+":="    {return id::ASSIGN;}
 
-"AND"       { std::cout << yytext;   return AND;}
-"ARRAY"     { std::cout << yytext;   return ARRAY;}
-"CASE"      { std::cout << yytext;   return CASE;}
-"CONST"     { std::cout << yytext;   return CONST;}
-"DIV"       { std::cout << yytext;   return DIV;}
-"MOD"       { std::cout << yytext;   return MOD;}
-"DO"        { std::cout << yytext;   return DO;}
-"DOWNTO"    {
-     std::cout << yytext;   
-    return DOWNTO;
-}
-"ELSE"      { std::cout << yytext;   return ELSE;}
-"END"       { std::cout << yytext;   return END;}
-"FOR"       { std::cout << yytext;   return FOR;}
-"FUNCTION"  { std::cout << yytext;   return FUNCTION;}
-"GOTO"      { std::cout << yytext;   return GOTO;}
-"IF"        { std::cout << yytext;   return IF;}
-"NOT"       { std::cout << yytext;   return NOT;}
-"OF"        { std::cout << yytext;   return OF;}
-"OR"        { std::cout << yytext;   return OR;}
-"XOR"       { std::cout << yytext;   return XOR;}
-"BEGIN"     { std::cout << yytext;   return PBEGIN;}
-"PROCEDURE" { std::cout << yytext;   return PROCEDURE;}
-"PROGRAM"   { std::cout << yytext;   return PROGRAM;}
+"AND"       {  return id::AND;}
+"ARRAY"     {  return id::ARRAY;}
+"CASE"      {  return id::CASE;}
+"CONST"     {  return id::CONST;}
+"DIV"       {  return id::DIV;}
+"MOD"       {  return id::MOD;}
+"DO"        {  return id::DO;}
+"DOWNTO"    {  return id::DOWNTO;}
+"ELSE"      {  return id::ELSE;}
+"END"       {  return id::END;}
+"FOR"       {  return id::FOR;}
+"FUNCTION"  {  return id::FUNCTION;}
+"GOTO"      {  return id::GOTO;}
+"IF"        {  return id::IF;}
+"NOT"       {  return id::NOT;}
+"OF"        {  return id::OF;}
+"OR"        {  return id::OR;}
+"XOR"       {  return id::XOR;}
+"BEGIN"     {  return id::PBEGIN;}
+"PROCEDURE" {  return id::PROCEDURE;}
+"PROGRAM"   {  return id::PROGRAM;}
 "READLN"      {
-     std::cout << yytext;   
-    return SYS_PROC;
+    /* std::cout << yytext; */  
+    yylval->build<fpc::SysFunc>(fpc::SysFunc::Readln);
+    return id::SYS_PROC;
 }
 "READ"      {
-     std::cout << yytext;   
-    return SYS_PROC;
+    /* std::cout << yytext; */  
+    yylval->build<fpc::SysFunc>(fpc::SysFunc::Read);
+    return id::SYS_PROC;
 }
-"REPEAT"    { std::cout << yytext;   return REPEAT;}
-"THEN"      { std::cout << yytext;   return THEN;}
-"TO"        {
-    std::cout << yytext;  
-    return TO;
-}
-"TYPE"      { std::cout << yytext;   return TYPE;}
-"UNTIL"     { std::cout << yytext;   return UNTIL;}
-"VAR"       { std::cout << yytext;   return VAR;}
-"WHILE"     { std::cout << yytext;   return WHILE;}
-"RECORD"    { std::cout << yytext;   return RECORD;}
+"REPEAT"    {  return id::REPEAT;}
+"THEN"      {  return id::THEN;}
+"TO"        {  return id::TO;}
+"TYPE"      {  return id::TYPE;}
+"UNTIL"     {  return id::UNTIL;}
+"VAR"       {  return id::VAR;}
+"WHILE"     {  return id::WHILE;}
+"RECORD"    { return id::RECORD;}
 
-"FALSE"     {
-    std::cout << yytext;  
-    return SYS_CON;
-}
-"MAXINT"    {
-    std::cout << yytext;  
-    return SYS_CON;
-}
-"TRUE"      {
-    std::cout << yytext;  
-    return SYS_CON;
-}
-"ABS"       {
-    std::cout << yytext; 
-    return SYS_FUNCT;
-}
-"CHR"       {
-     std::cout << yytext;  
-    return SYS_FUNCT;
-}
-"CONCAT"       {
-    std::cout << yytext;  
-    return SYS_FUNCT;
-}
-"LENGTH"       {
-     std::cout << yytext;  
-    return SYS_FUNCT;
-}
-"ODD"       {
-     std::cout << yytext;  
-    return SYS_FUNCT;
-}
-"ORD"       {
-     std::cout << yytext;  
-    return SYS_FUNCT;
-}
-"PRED"      {
-         std::cout << yytext;  
-    return SYS_FUNCT;
-}
-"SQR"       {
-     std::cout << yytext;  
-    return SYS_FUNCT;
-}
-"SQRT"      {
-     std::cout << yytext;  
-    return SYS_FUNCT;
-}
-"STR"      {
-     std::cout << yytext;  
-    return SYS_FUNCT;
-}
-"SUCC"      {
-     std::cout << yytext;  
-    return SYS_FUNCT;
-}
-"VAL"     {
-     std::cout << yytext;  
-    return SYS_FUNCT;
-}
-"WRITE"     {
-     std::cout << yytext;  
-    return SYS_PROC;
-}
-"WRITELN"   {
-     std::cout << yytext;  
-    return SYS_PROC;
-}
+"FALSE"     { return id::SYS_CON;}
+"MAXINT"    { return id::SYS_CON;}
+"TRUE"      { return id::SYS_CON;}
+"ABS"       { return id::SYS_FUNCT;}
+"CHR"       { return id::SYS_FUNCT;}
+"ODD"       { return id::SYS_FUNCT;}
+"ORD"       { return id::SYS_FUNCT;}
+"PRED"      { return id::SYS_FUNCT;}
+"SQR"       { return id::SYS_FUNCT;}
+"SQRT"      { return id::SYS_FUNCT;}
+"SUCC"      { return id::SYS_FUNCT;}
+"WRITE"     { return id::SYS_PROC;}
+"WRITELN"   { return id::SYS_PROC;}
 
-"BOOLEAN"   {
-     std::cout << yytext;  
-    return SYS_TYPE;
-}
-"CHAR"      {
-     std::cout << yytext;  
-    return SYS_TYPE;
-}
-"INTEGER"   {
-     std::cout << yytext;  
-    return SYS_TYPE;
-}
-"LONGINT"   {
-     std::cout << yytext;  
-    return SYS_TYPE;
-}
-"REAL"      {
-     std::cout << yytext; 
-    return SYS_TYPE;
-}
-"STRING"    {
-     std::cout << yytext; 
-    return STR_TYPE;
-}
+"BOOLEAN"   { return id::SYS_TYPE;}
+"CHAR"      { return id::SYS_TYPE;}
+"INTEGER"   { return id::SYS_TYPE;}
+"REAL"      { return id::SYS_TYPE;}
+"STRING"    { return id::STRING;}
+"INIT"      { return id::INIT;}
+"INITEND"   { return id::INITEND;}
 
-[+-]?[0-9]+      {
-     std::cout << "Integer: " << yytext; 
-    return INTEGER;
-}
-[+-]?[0-9]+"."[0-9]+("e"[+-]?[0-9]+)?   {
-     std::cout << "Real Number: " << yytext; 
-    return REAL;
-}
-'{NQUOTE}'  {
-     std::cout << "CHAR: " << yytext; 
-    return CHAR;
-}
-'({NQUOTE}|'')+'  {
-     std::cout << "STRING: " << yytext; 
-    yytext[yyleng-1] = 0; 
-    return STRING;
-}
-[a-zA-Z_]([a-zA-Z0-9_])*  {
-     std::cout << "IDD: " << yytext << " "; 
-    yytext[yyleng] = 0;
-    return ID;
-}
-[ \t\f]    { std::cout << ' ';  continue;}
-[\n\r]     { std::cout << std::endl;  }
+[0-9]+      {std::cout << "Integer: " << yytext; return id::INTEGER;}
+[0-9]+"."[0-9]+   {std::cout << "Real Number: " << yytext; return id::REAL;}
+'{NQUOTE}'  {std::cout << "CHAR: " << yytext; return id::CHAR;}
+'({NQUOTE}|'')+'  {std::cout << "STRING: " << yytext; yytext[yyleng-1] = 0; return id::STRING;}
+[a-zA-Z_]([a-zA-Z0-9_])*  {std::cout << "IDD: " << yytext << " "; yytext[yyleng] = 0; return id::ID;}
+[\t\f]    {std::cout << ' '; continue;}
+[\n\r]     {std::cout << std::endl;}
 
 "(*" {
-   
+    char c;
+    while(c = yyinput()) 
+    {
+        if(c == '*') 
+        {
+            if((c = yyinput()) == ')')
+                break;
+            else unput(c);
+        }
+    }
 }
 "{" {
-    
+    char c;
+    while(c = yyinput()) 
+    {
+        if(c == '}') break;
+    }
 }
 "//" {
-    
+    char c;
+    while(c = yyinput()) 
+    {
+        if(c == '\n') 
+        {
+            break;
+        }
+        else if(c == EOF) {
+            break;
+        }
+    }
 }
 
-. {
-    std::cout<< "error\n";);
-}
+. {}
 
 %%
 
