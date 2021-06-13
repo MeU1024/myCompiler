@@ -1,5 +1,5 @@
 #include "basis.hpp"
-#include "codegen_context.hpp"
+#include "context.hpp"
 #include <cassert>
 
 namespace fpc
@@ -26,25 +26,80 @@ namespace fpc
         header->varList->codegen(context);
 
         //添加subroutine
-       
+        context.is_subroutine = true;
+        context.log() << "Entering global routine part" << std::endl;
+        header->subroutineList->codegen(context);
+        context.is_subroutine = false;
+
+        context.getBuilder().SetInsertPoint(block);
+        context.log() << "Entering global body part" << std::endl;
+        body->codegen(context);
+        context.getBuilder().CreateRet(context.getBuilder().getInt32(0));
 
         return nullptr;
     }
 
-    //TODO:RoutineNode？
-
     llvm::Value *RoutineNode::codegen(CodegenContext &context)
     {
         context.log() << "Entering function " + name->name << std::endl;
-
-        if (context.getModule()->getFunction(name->name) != nullptr)
-            throw CodegenException("Duplicate function definition: " + name->name);
 
         context.traces.push_back(name->name);
 
         std::vector<llvm::Type *> types;
         std::vector<std::string> names;
 
+        //获得参数
+        for (auto &p : params->getChildren()) 
+        {
+            auto *ty = p->type->findType(context);
+            if (ty == nullptr)
+                throw CodegenException("Unsupported function param type");
+            types.push_back(ty);
+            names.push_back(p->name->name);
+            if (ty->isArrayTy())
+            {
+                if (p->type->type == Type::String)
+                    context.setArrayEntry(name->name + "." + p->name->name, 0, 255);
+                else if (p->type->type == Type::Array)
+                {
+                    auto arrTy = cast_node<ArrayTypeNode>(p->type);
+                    assert(arrTy != nullptr);
+                    context.setArrayEntry(name->name + "." + p->name->name, arrTy);
+                    arrTy->insertNestedArray(name->name + "." + p->name->name, context);
+                }
+                else if (p->type->type == Type::Alias)
+                {
+                    std::string aliasName = cast_node<AliasTypeNode>(p->type)->name->name;
+                    std::shared_ptr<ArrayTypeNode> a;
+                    for (auto rit = context.traces.rbegin(); rit != context.traces.rend(); rit++)
+                        if ((a = context.getArrayAlias(*rit + "." + aliasName)) != nullptr)
+                            break;
+                    if (a == nullptr) a = context.getArrayAlias(aliasName);
+                    assert(a != nullptr && "Fatal error: array type not found!");
+                    context.setArrayEntry(name->name + "." + p->name->name, a);
+                    a->insertNestedArray(name->name + "." + p->name->name, context);
+                }
+            }
+            else if (ty->isStructTy())
+            {
+               
+            }
+        }
+
+        //返回类型
+        llvm::Type *retTy = this->retType->findType(context);
+        if (retTy == nullptr) throw CodegenException("Unsupported function return type");
+        if (retTy->isArrayTy())
+        {
+            if (!retTy->getArrayElementType()->isIntegerTy(8) || retTy->getArrayNumElements() != 256)
+                throw CodegenException("Not support array as function return type");
+            retTy = context.getBuilder().getInt8PtrTy();
+            context.setArrayEntry(name->name + "." + name->name, 0, 255);
+        }
+        else if (retTy->isStructTy())
+        {
+            
+        }
 
         //insert block
         auto *funcTy = llvm::FunctionType::get(retTy, types, false);
@@ -74,7 +129,7 @@ namespace fpc
         context.getBuilder().SetInsertPoint(block);
         if (retType->type != Type::Void)  // set the return variable
         {  
-            auto *type = retType->getLLVMType(context);
+            auto *type = retType->findType(context);
 
             llvm::Value *local;
             if (type == nullptr) throw CodegenException("Unknown function return type");
@@ -96,26 +151,285 @@ namespace fpc
         context.log() << "Entering body part of function " << name->name << std::endl;
         body->codegen(context);
 
-       
+        if (retType->type != Type::Void) 
+        {
+            auto *local = context.getLocal(name->name + "." + name->name);
+            llvm::Value *ret = context.getBuilder().CreateLoad(local);
+            if (ret->getType()->isArrayTy())
+            {
+                llvm::Value *tmpStr = context.getTempStrPtr();
+                llvm::Value *zero = llvm::ConstantInt::get(context.getBuilder().getInt32Ty(), 0, false);
+                llvm::Value *retPtr = context.getBuilder().CreateInBoundsGEP(local, {zero, zero});
+                context.log() << "\tSysfunc STRCPY" << std::endl;
+                context.getBuilder().CreateCall(context.strcpyFunc, {tmpStr, retPtr});
+                context.log() << "\tSTRING return" << std::endl;
+                context.getBuilder().CreateRet(tmpStr);
+            }
+            else
+                context.getBuilder().CreateRet(ret);
+        } 
+        else 
+        {
+            context.getBuilder().CreateRetVoid();
+        }
+
+        context.traces.pop_back();  
+
+        context.log() << "Leaving function " << name->name << std::endl;
 
         return nullptr;
     }
 
      llvm::Value *VarDeclNode::createGlobalArray(CodegenContext &context, const std::shared_ptr<ArrayTypeNode> &arrTy)
     {
-        return;
+        // std::shared_ptr<ArrayTypeNode> arrTy = cast_node<ArrayTypeNode>(this->type);
+        context.log() << "\tCreating array " << this->name->name << std::endl;
+        auto *ty = arrTy->itemType->findType(context);
+        llvm::Constant *z; // zero
+        if (ty->isIntegerTy()) 
+            z = llvm::ConstantInt::get(ty, 0);
+        else if (ty->isDoubleTy())
+            z = llvm::ConstantFP::get(ty, 0.0);
+        else if (ty->isStructTy())
+        {
+           
+        }
+        else if (ty->isArrayTy())
+        {
+            z = llvm::Constant::getNullValue(ty);
+            std::shared_ptr<ArrayTypeNode> arr;
+            if (is_ptr_of<ArrayTypeNode>(arrTy->itemType))
+                arr = cast_node<ArrayTypeNode>(arrTy->itemType);
+            else if (is_ptr_of<StringTypeNode>(arrTy->itemType))
+                arr = nullptr;
+            else if (is_ptr_of<AliasTypeNode>(arrTy->itemType))
+            {
+                std::string aliasName = cast_node<AliasTypeNode>(arrTy->itemType)->name->name;
+                for (auto rit = context.traces.rbegin(); rit != context.traces.rend(); rit++)
+                    if ((arr = context.getArrayAlias(*rit + "." + aliasName)) != nullptr)
+                        break;
+                if (arr == nullptr) arr = context.getArrayAlias(aliasName);
+                if (arr == nullptr) assert(0 && "Fatal Error: Unexpected behavior!");
+            }
+            else assert(0 && "Fatal Error: Unexpected behavior!");
+            if (arr == nullptr) // String
+                context.setArrayEntry(this->name->name + "[]", 0, 255);
+            else
+            {
+                context.setArrayEntry(this->name->name + "[]", arr);
+                arr->insertNestedArray(this->name->name + "[]", context);
+            }
+        }
+        else 
+            throw CodegenException("Unsupported type of array");
+
+        llvm::ConstantInt *startIdx = llvm::dyn_cast<llvm::ConstantInt>(arrTy->range_start->codegen(context));
+        if (!startIdx)
+            throw CodegenException("Start index invalid");
+        // else if (startIdx->getSExtValue() < 0)
+        //     throw CodegenException("Start index must be greater than zero!");
+        int start = startIdx->getSExtValue();
+        
+        int len = 0;
+        llvm::ConstantInt *endIdx = llvm::dyn_cast<llvm::ConstantInt>(arrTy->range_end->codegen(context));
+        int end = endIdx->getSExtValue();
+        if (!endIdx)
+            throw CodegenException("End index invalid");
+        else if (start > end)
+            throw CodegenException("End index must be greater than start index!");
+        else if (endIdx->getBitWidth() <= 32)
+            len = end - start + 1;
+        else
+            throw CodegenException("End index overflow");
+
+        context.log() << "\tArray info: start: " << start << " end: " << end << " len: " << len << std::endl;
+        llvm::ArrayType* arr = llvm::ArrayType::get(ty, len);
+        std::vector<llvm::Constant *> initVector;
+        for (int i = 0; i < len; i++)
+            initVector.push_back(z);
+        auto *variable = llvm::ConstantArray::get(arr, initVector);
+
+        llvm::Value *gv = new llvm::GlobalVariable(*context.getModule(), variable->getType(), false, llvm::GlobalVariable::ExternalLinkage, variable, this->name->name);
+        context.log() << "\tCreated array " << this->name->name << std::endl;
+
+        context.setArrayEntry(this->name->name, start, end);
+        context.log() << "\tInserted to array table" << std::endl;
+
+        return gv;
     }
 
     llvm::Value *VarDeclNode::createArray(CodegenContext &context, const std::shared_ptr<ArrayTypeNode> &arrTy)
     {
-    
+        // std::shared_ptr<ArrayTypeNode> arrTy = cast_node<ArrayTypeNode>(this->type);
+        context.log() << "\tCreating array " << this->name->name << std::endl;
+        auto *ty = arrTy->itemType->findType(context);
+        llvm::Constant *constant;
+        if (ty->isIntegerTy()) 
+            constant = llvm::ConstantInt::get(ty, 0);
+        else if (ty->isDoubleTy())
+            constant = llvm::ConstantFP::get(ty, 0.0);
+        else if (ty->isStructTy())
+        {
+            
+        }
+        else if (ty->isArrayTy())
+        {
+            constant = nullptr;
+            std::shared_ptr<ArrayTypeNode> arr;
+            if (is_ptr_of<ArrayTypeNode>(arrTy->itemType))
+                arr = cast_node<ArrayTypeNode>(arrTy->itemType);
+            else if (is_ptr_of<StringTypeNode>(arrTy->itemType))
+                arr = nullptr;
+            else if (is_ptr_of<AliasTypeNode>(arrTy->itemType))
+            {
+                std::string aliasName = cast_node<AliasTypeNode>(arrTy->itemType)->name->name;
+                for (auto rit = context.traces.rbegin(); rit != context.traces.rend(); rit++)
+                    if ((arr = context.getArrayAlias(*rit + "." + aliasName)) != nullptr)
+                        break;
+                if (arr == nullptr) arr = context.getArrayAlias(aliasName);
+                if (arr == nullptr) assert(0 && "Fatal Error: Unexpected behavior!");
+            }
+            else assert(0 && "Fatal Error: Unexpected behavior!");
+            if (arr == nullptr) // String
+                context.setArrayEntry(this->name->name + "[]", 0, 255);
+            else
+            {
+                context.setArrayEntry(this->name->name + "[]", arr);
+                arr->insertNestedArray(this->name->name + "[]", context);
+            }
+        }
+        else
+            throw CodegenException("Unsupported type of array");
 
-        return;
+        llvm::ConstantInt *startIdx = llvm::dyn_cast<llvm::ConstantInt>(arrTy->range_start->codegen(context));
+        if (!startIdx)
+            throw CodegenException("Start index invalid");
+        // else if (startIdx->getSExtValue() < 0)
+        //     throw CodegenException("Start index must be greater than zero!");
+        int start = startIdx->getSExtValue();
+        
+        unsigned len = 0;
+        llvm::ConstantInt *endIdx = llvm::dyn_cast<llvm::ConstantInt>(arrTy->range_end->codegen(context));
+        int end = endIdx->getSExtValue();
+        if (!endIdx)
+            throw CodegenException("End index invalid");
+        else if (start > end)
+            throw CodegenException("End index must be greater than start index!");
+        else if (endIdx->getBitWidth() <= 32)
+            len = end - start + 1;
+        else
+            throw CodegenException("End index overflow");
+        
+        context.log() << "\tArray info: start: " << start << " end: " << end << " len: " << len << std::endl;
+        // llvm::ConstantInt *space = llvm::ConstantInt::get(context.getBuilder().getInt32Ty(), len);
+        llvm::ArrayType *arrayTy = llvm::ArrayType::get(ty, len);
+        // auto *local = context.getBuilder().CreateAlloca(ty, space);
+        auto *local = context.getBuilder().CreateAlloca(arrayTy);
+        auto success = context.setLocal(context.getTrace() + "." + this->name->name, local);
+        if (!success) throw CodegenException("Duplicate identifier in var section of function " + context.getTrace() + ": " + this->name->name);
+        context.log() << "\tCreated array " << this->name->name << std::endl;
+
+        context.setArrayEntry(context.getTrace() + "." + this->name->name, start, end);
+        context.log() << "\tInserted to array table" << std::endl;
+
+        return local;
     }
     
     llvm::Value *VarDeclNode::codegen(CodegenContext &context)
     {
-       
+        if (context.is_subroutine)
+        {
+            if (type->type == Type::Alias)
+            {
+                std::string aliasName = cast_node<AliasTypeNode>(type)->name->name;
+                context.log() << "\tSearching alias " << aliasName << std::endl;
+                std::shared_ptr<ArrayTypeNode> arrTy = nullptr;
+                for (auto rit = context.traces.rbegin(); rit != context.traces.rend(); rit++)
+                {
+                    if ((arrTy = context.getArrayAlias(*rit + "." + aliasName)) != nullptr)
+                        break;
+                }
+                if (arrTy == nullptr)
+                    arrTy = context.getArrayAlias(aliasName);
+                if (arrTy != nullptr)
+                {
+                    context.log() << "\tAlias is array" << std::endl;
+                    return createArray(context, arrTy);
+                }
+                std::shared_ptr<RecordTypeNode> recTy = nullptr;
+                for (auto rit = context.traces.rbegin(); rit != context.traces.rend(); rit++)
+                {
+                    if ((recTy = context.getRecordAlias(*rit + "." + aliasName)) != nullptr)
+                        break;
+                }
+                if (recTy == nullptr)
+                    recTy = context.getRecordAlias(aliasName);
+
+            }
+            if (type->type == Type::Array)
+                return createArray(context, cast_node<ArrayTypeNode>(this->type));
+            else if (type->type == Type::String)
+            {
+                auto arrTy = make_new_node<ArrayTypeNode>(0, 255, Type::Char);
+                return createArray(context, arrTy);
+            }
+            else
+            {
+                auto *local = context.getBuilder().CreateAlloca(type->findType(context));
+                auto success = context.setLocal(context.getTrace() + "." + name->name, local);
+                if (!success) throw CodegenException("Duplicate identifier in var section of function " + context.getTrace() + ": " + name->name);
+                return local;
+            }
+        }
+        else
+        {
+            if (context.getModule()->getGlobalVariable(name->name) != nullptr)
+                throw CodegenException("Duplicate global variable: " + name->name);
+            if (type->type == Type::Alias)
+            {
+                std::string aliasName = cast_node<AliasTypeNode>(type)->name->name;
+                context.log() << "\tSearching alias " << aliasName << std::endl;
+                std::shared_ptr<ArrayTypeNode> arrTy = context.getArrayAlias(aliasName);
+                if (arrTy != nullptr)
+                {
+                    context.log() << "\tAlias is array" << std::endl;
+                    return createGlobalArray(context, arrTy);
+                }
+                std::shared_ptr<RecordTypeNode> recTy = nullptr;
+                for (auto rit = context.traces.rbegin(); rit != context.traces.rend(); rit++)
+                {
+                    if ((recTy = context.getRecordAlias(*rit + "." + aliasName)) != nullptr)
+                        break;
+                }
+                if (recTy == nullptr)
+                    recTy = context.getRecordAlias(aliasName);
+        
+            }
+            if (type->type == Type::Array)
+                return createGlobalArray(context, cast_node<ArrayTypeNode>(this->type));
+            else if (type->type == Type::String)
+            {
+                auto arrTy = make_new_node<ArrayTypeNode>(0, 255, Type::Char);
+                return createGlobalArray(context, arrTy);
+            }
+            else
+            {
+
+                auto *ty = type->findType(context);
+                llvm::Constant *constant;
+                if (ty->isIntegerTy()) 
+                    constant = llvm::ConstantInt::get(ty, 0);
+                else if (ty->isDoubleTy())
+                    constant = llvm::ConstantFP::get(ty, 0.0);
+                else if (ty->isStructTy())
+       	        {
+                   
+                }
+                else
+                    throw CodegenException("Unknown type");
+                return new llvm::GlobalVariable(*context.getModule(), ty, false, llvm::GlobalVariable::ExternalLinkage, constant, name->name);
+            }
+        }
     }
 
     llvm::Value *ConstDeclNode::codegen(CodegenContext &context)
@@ -148,9 +462,78 @@ namespace fpc
         }
         else
         {
+            if (val->type == Type::String)
+            {
+                context.log() << "\tConst string declare" << std::endl;
+                auto strVal = cast_node<StringNode>(val);
+                auto *constant = llvm::ConstantDataArray::getString(llvm_context, strVal->val, true);
+                context.setConst(name->name, constant);
+                context.log() << "\tAdded to symbol table" << std::endl;
+                auto *gv = new llvm::GlobalVariable(*context.getModule(), constant->getType(), true, llvm::GlobalVariable::ExternalLinkage, constant, name->name);
+                context.log() << "\tCreated global variable" << std::endl;
+                return gv;
+            }
+            else
+            {
+                context.log() << "\tConst declare" << std::endl;
+                auto *constant = llvm::cast<llvm::Constant>(val->codegen(context));
+                bool success = context.setConst(name->name, constant);
+                success &= context.setConstVal(name->name, constant);
+                if (!success) throw CodegenException("Duplicate identifier in const section of main program: " + name->name);
+                context.log() << "\tAdded to symbol table" << std::endl;
+                return nullptr;
+            } 
         }
     }
 
+    llvm::Value *TypeDeclNode::codegen(CodegenContext &context)
+    {
+        if (context.is_subroutine)
+        {
+            if (type->type == Type::Array)
+            {
+                bool success = context.setAlias(context.getTrace() + "." + name->name, type->findType(context));
+                success &= context.setArrayAlias(context.getTrace() + "." + name->name, cast_node<ArrayTypeNode>(type));
+                if (!success) throw CodegenException("Duplicate type alias in function " + context.getTrace() + ": " + name->name);
+                context.log() << "\tArray alias in function " << context.getTrace() << ": " << name->name << std::endl;
+            }
+            else if (type->type == Type::Record)
+            {
+                bool success = context.setAlias(context.getTrace() + "." + name->name, type->findType(context));
+                success &= context.setRecordAlias(context.getTrace() + "." + name->name, cast_node<RecordTypeNode>(type));
+                if (!success) throw CodegenException("Duplicate type alias in function " + context.getTrace() + ": " + name->name);
+                context.log() << "\tRecord alias in function " << context.getTrace() << ": " << name->name << std::endl;
+            }
+            else
+            {
+                bool success = context.setAlias(context.getTrace() + "." + name->name, type->findType(context));
+                if (!success) throw CodegenException("Duplicate type alias in function " + context.getTrace() + ": " + name->name);
+            }
+        }
+        else
+        {
+            if (type->type == Type::Array)
+            {
+                bool success = context.setAlias(name->name, type->findType(context));
+                success &= context.setArrayAlias(name->name, cast_node<ArrayTypeNode>(type));
+                if (!success) throw CodegenException("Duplicate type alias in main program: " + name->name);
+                context.log() << "\tGlobal array alias: " << name->name << std::endl;
+            }
+            else if (type->type == Type::Record)
+            {
+                bool success = context.setAlias(name->name, type->findType(context));
+                success &= context.setRecordAlias(name->name, cast_node<RecordTypeNode>(type));
+                if (!success) throw CodegenException("Duplicate type alias in main program: " + name->name);
+                context.log() << "\tGlobal record alias: " << name->name << std::endl;
+            }
+            else
+            {
+                bool success = context.setAlias(name->name, type->findType(context));
+                if (!success) throw CodegenException("Duplicate type alias in main program: " + name->name);
+            }        
+        }
+        return nullptr;
+    }
 
      llvm::Value *BinaryExprNode::codegen(CodegenContext &context)
     {
@@ -249,6 +632,39 @@ namespace fpc
             throw CodegenException("Invaild operation between different types");
     }
 
+    llvm::Value *CustomProcNode::codegen(CodegenContext &context)
+    {
+        auto *func = context.getModule()->getFunction(name->name);
+        if (!func)
+            throw CodegenException("Function not found: " + name->name + "()");
+        size_t argCnt = 0;
+        int index = 0;
+        if (args != nullptr)
+            argCnt = args->getChildren().size();
+        if (func->arg_size() != argCnt)
+            throw CodegenException("Wrong number of arguments: " + name->name + "()");
+        auto *funcTy = func->getFunctionType();
+        std::vector<llvm::Value*> values;
+        if (args != nullptr)
+            for (auto &arg : args->getChildren())
+            {
+                llvm::Value *argVal = arg->codegen(context);
+                auto *paramTy = funcTy->getParamType(index), *argTy = argVal->getType();
+                if (paramTy->isDoubleTy() && argTy->isIntegerTy(32))
+                    argVal = context.getBuilder().CreateSIToFP(argVal, paramTy);
+                else if (argTy->isDoubleTy() && paramTy->isIntegerTy(32))
+                {
+                    std::cerr << "Warning: casting REAL type to INTEGER type when calling function " << name->name << "()" << std::endl;
+                    argVal = context.getBuilder().CreateFPToSI(argVal, paramTy);
+                }
+                else if (funcTy->getParamType(index) != argVal->getType())
+                    throw CodegenException("Incompatible type in the " + std::to_string(index) + "th arg when calling " + name->name + "()");
+                values.push_back(argVal);
+                index++;
+            }
+     
+        return context.getBuilder().CreateCall(func, values);
+    }
 
     llvm::Value *SysProcNode::codegen(CodegenContext &context)
     {
@@ -262,7 +678,10 @@ namespace fpc
                     std::vector<llvm::Value*> func_args;
                     if (value->getType()->isIntegerTy(32)) 
                     {
-                        func_args.push_back(context.getBuilder().CreateGlobalStringPtr("%10d"));
+                        std::string setWid = "%";
+                        setWid.append(width);
+                        setWid.append("d");
+                        func_args.push_back(context.getBuilder().CreateGlobalStringPtr(setWid));
                         func_args.push_back(value);
                     }
                     else if (value->getType()->isIntegerTy(8)) 
@@ -287,16 +706,6 @@ namespace fpc
                             auto argId = cast_node<LeftExprNode>(arg);
                             valuePtr = argId->getPtr(context);
                         }
-                        // else if (is_ptr_of<RecordRefNode>(arg))
-                        // {
-                        //     auto argId = cast_node<RecordRefNode>(arg);
-                        //     valuePtr = argId->getPtr(context);
-                        // }
-                        // else if (is_ptr_of<ArrayRefNode>(arg))
-                        // {
-                        //     auto argId = cast_node<ArrayRefNode>(arg);
-                        //     valuePtr = argId->getPtr(context);
-                        // }
                         else if (is_ptr_of<CustomProcNode>(arg))
                             valuePtr = value;
                         else
@@ -326,12 +735,6 @@ namespace fpc
                     llvm::Value *ptr;
                     if (is_ptr_of<LeftExprNode>(arg))
                         ptr = cast_node<LeftExprNode>(arg)->getPtr(context);
-                    // else if (is_ptr_of<ArrayRefNode>(arg))
-                    //     ptr = cast_node<ArrayRefNode>(arg)->getPtr(context);
-                    // else if (is_ptr_of<RecordRefNode>(arg))
-                    //     ptr = cast_node<RecordRefNode>(arg)->getPtr(context);
-                    // else if (is_ptr_of<ArrayRefNode>(arg))
-                    //     ptr = cast_node<ArrayRefNode>(arg)->getPtr(context);
                     else
                         throw CodegenException("Argument in read() must be identifier or array/record reference");
                     std::vector<llvm::Value*> func_args;
@@ -376,10 +779,240 @@ namespace fpc
             }
             return nullptr;
         }
+        else if (name == SysFunc::Concat)
+        {
+            context.log() << "\tSysfunc CONCAT" << std::endl;
+            std::string format;
+            std::list<llvm::Value*> func_args;
+            for (auto &arg : this->args->getChildren()) {
+                auto *value = arg->codegen(context);
+                auto x = value->getType();
+                if (value->getType()->isIntegerTy(32)) 
+                {
+                    format += "%d";
+                    func_args.push_back(value);
+                }
+                else if (value->getType()->isIntegerTy(8)) 
+                {
+                    format += "%c";
+                    func_args.push_back(value);
+                }
+                else if (value->getType()->isDoubleTy()) 
+                {
+                    format += "%f";
+                    func_args.push_back(value);
+                }
+                else if (value->getType()->isArrayTy()) // String
+                {
+                    auto *a = llvm::cast<llvm::ArrayType>(x);
+                    if (!a->getElementType()->isIntegerTy(8))
+                        throw CodegenException("Cannot concat a non-char array");
+                    format += "%s";
+                    llvm::Value *valuePtr;
+                    if (is_ptr_of<LeftExprNode>(arg))
+                    {
+                        auto argId = cast_node<LeftExprNode>(arg);
+                        valuePtr = argId->getPtr(context);
+                    }
+                    else
+                        assert(0);
+                    func_args.push_back(valuePtr);
+                }
+                else if (value->getType()->isPointerTy()) // String
+                {
+                    format += "%s";
+                    func_args.push_back(value);
+                }
+                else 
+                    throw CodegenException("Incompatible type in concat(): expected char, integer, real, array, string");        
+            }
+            func_args.push_front(context.getBuilder().CreateGlobalStringPtr(format.c_str()));
+            func_args.push_front(context.getTempStrPtr());
+            // sprintf(__tmp_str, "...formats", ...args);
+            std::vector<llvm::Value*> func_args_vec(func_args.begin(), func_args.end());
+            context.getBuilder().CreateCall(context.sprintfFunc, func_args_vec);
+            return context.getTempStrPtr();
+        }
+        else if (name == SysFunc::Length)
+        {
+            context.log() << "\tSysfunc LENGTH" << std::endl;
+            if (args->getChildren().size() != 1)
+                throw CodegenException("Wrong number of arguments in length(): expected 1");
+            auto arg = args->getChildren().front();
+            auto *value = arg->codegen(context);
+            auto *ty = value->getType();
+            llvm::Value *zero = llvm::ConstantInt::getSigned(context.getBuilder().getInt32Ty(), 0);
+            // context.log() << ty->getTypeID() << std::endl;
+            if (ty->isArrayTy() && ty->getArrayElementType()->isIntegerTy(8))
+            {
+                llvm::Value *valPtr;
+                if (is_ptr_of<LeftExprNode>(arg))
+                    valPtr = context.getBuilder().CreateInBoundsGEP(cast_node<LeftExprNode>(arg)->getPtr(context), {zero, zero});
+                else if (is_ptr_of<CustomProcNode>(arg))
+                    valPtr = context.getBuilder().CreateInBoundsGEP(value, {zero, zero});
+                else
+                    assert(0);
+                return context.getBuilder().CreateCall(context.strlenFunc, valPtr);
+            }
+            else if (ty->isPointerTy())
+            {
+               
+                if(ty == context.getBuilder().getInt8PtrTy())
+                    return context.getBuilder().CreateCall(context.strlenFunc, value);
+                else if (ty->getPointerElementType()->isIntegerTy(8))
+                {
+                    llvm::Value *valPtr = context.getBuilder().CreateGEP(value, zero);
+                    return context.getBuilder().CreateCall(context.atoiFunc, valPtr);
+                }
+                else if (ty->getPointerElementType()->isArrayTy())
+                {
+                    llvm::Value *valPtr = context.getBuilder().CreateInBoundsGEP(value, {zero, zero});
+                    return context.getBuilder().CreateCall(context.strlenFunc, valPtr);
+                }
+                else
+                {
+                    throw CodegenException("Incompatible type in length(): expected string");
+                }
+            }
+            else
+            {
+                throw CodegenException("Incompatible type in length(): expected string");
+            }
+        }
+        else if (name == SysFunc::Abs)
+        {
+            context.log() << "\tSysfunc ABS" << std::endl;
+            if (args->getChildren().size() != 1)
+                throw CodegenException("Wrong number of arguments in abs(): expected 1");
+            auto *value = args->getChildren().front()->codegen(context);
+            if (value->getType()->isIntegerTy(32))
+                return context.getBuilder().CreateCall(context.absFunc, value);
+            else if (value->getType()->isDoubleTy())
+                return context.getBuilder().CreateCall(context.fabsFunc, value);
+            else
+                throw CodegenException("Incompatible type in abs(): expected integer, real");
+        }
+        else if (name == SysFunc::Val)
+        {
+            context.log() << "\tSysfunc VAL" << std::endl;
+            if (args->getChildren().size() != 1)
+                throw CodegenException("Wrong number of arguments in val(): expected 1");
+            auto arg = args->getChildren().front();
+            auto *value = arg->codegen(context);
+            auto *ty = value->getType();
+            llvm::Value *zero = llvm::ConstantInt::getSigned(context.getBuilder().getInt32Ty(), 0);
+            if (ty->isArrayTy() && ty->getArrayElementType()->isIntegerTy(8))
+            {
+                llvm::Value *valPtr;
+                if (is_ptr_of<LeftExprNode>(arg))
+                    valPtr = context.getBuilder().CreateInBoundsGEP(cast_node<LeftExprNode>(arg)->getPtr(context), {zero, zero});
+               
+                else if (is_ptr_of<CustomProcNode>(arg))
+                    valPtr = context.getBuilder().CreateInBoundsGEP(value, {zero, zero});
+                else
+                    assert(0);
+                return context.getBuilder().CreateCall(context.atoiFunc, valPtr);
+            }
+            else if (ty->isPointerTy())
+            {
+                if(ty == context.getBuilder().getInt8PtrTy())
+                    return context.getBuilder().CreateCall(context.atoiFunc, value);
+                else if (ty->getPointerElementType()->isIntegerTy(8))
+                {
+                    llvm::Value *valPtr = context.getBuilder().CreateGEP(value, zero);
+                    return context.getBuilder().CreateCall(context.atoiFunc, valPtr);
+                }
+                else if (ty->getPointerElementType()->isArrayTy())
+                {
+                    llvm::Value *valPtr = context.getBuilder().CreateInBoundsGEP(value, {zero, zero});
+                    return context.getBuilder().CreateCall(context.atoiFunc, valPtr);
+                }
+                else
+                    throw CodegenException("Incompatible type in val(): expected string");
+            }
+            else
+                throw CodegenException("Incompatible type in val(): expected string");
+        }
+        else if (name == SysFunc::Str)
+        {
+            context.log() << "\tSysfunc STR" << std::endl;
+            if (args->getChildren().size() != 1)
+                throw CodegenException("Wrong number of arguments in str(): expected 1");
+            auto arg = args->getChildren().front();
+            auto *value = arg->codegen(context);
+            auto *ty = value->getType();
+            llvm::Value *zero = llvm::ConstantInt::getSigned(context.getBuilder().getInt32Ty(), 0);
+            if (ty->isIntegerTy(8))
+            {
+                context.getBuilder().CreateCall(context.sprintfFunc, {context.getTempStrPtr(), context.getBuilder().CreateGlobalStringPtr("%c"), value});
+                return context.getTempStrPtr();
+            }
+            else if (ty->isIntegerTy(32))
+            {
+                context.getBuilder().CreateCall(context.sprintfFunc, {context.getTempStrPtr(), context.getBuilder().CreateGlobalStringPtr("%d"), value});
+                return context.getTempStrPtr();
+            }
+            else if (ty->isDoubleTy())
+            {
+                context.getBuilder().CreateCall(context.sprintfFunc, {context.getTempStrPtr(), context.getBuilder().CreateGlobalStringPtr("%f"), value});
+                return context.getTempStrPtr();
+            }
+            else
+                throw CodegenException("Incompatible type in str(): expected integer, char, real");
+        }
+        else if (name == SysFunc::Abs)
+        {
+            context.log() << "\tSysfunc ABS" << std::endl;
+            if (args->getChildren().size() != 1)
+                throw CodegenException("Wrong number of arguments in abs(): expected 1");
+            auto *value = args->getChildren().front()->codegen(context);
+            if (value->getType()->isIntegerTy(32))
+                return context.getBuilder().CreateCall(context.absFunc, value);
+            else if (value->getType()->isDoubleTy())
+                return context.getBuilder().CreateCall(context.fabsFunc, value);
+            else
+                throw CodegenException("Incompatible type in abs(): expected integer, real");
+        }
+        else if (name == SysFunc::Sqrt)
+        {
+            context.log() << "\tSysfunc SQRT" << std::endl;
+            if (args->getChildren().size() != 1)
+                throw CodegenException("Wrong number of arguments in sqrt(): expected 1");
+            auto *value = args->getChildren().front()->codegen(context);
+            auto *double_ty = context.getBuilder().getDoubleTy();
+            if (value->getType()->isIntegerTy(32))
+                value = context.getBuilder().CreateSIToFP(value, double_ty);
+            else if (!value->getType()->isDoubleTy())
+                throw CodegenException("Incompatible type in sqrt(): expected integer, real");
+            return context.getBuilder().CreateCall(context.sqrtFunc, value);
+        }
+        else if (name == SysFunc::Sqr)
+        {
+            context.log() << "\tSysfunc SQR" << std::endl;
+            if (args->getChildren().size() != 1)
+                throw CodegenException("Wrong number of arguments: sqr()");
+            auto *value = args->getChildren().front()->codegen(context);
+            if (value->getType()->isIntegerTy(32))      
+                return context.getBuilder().CreateBinOp(llvm::Instruction::Mul, value, value);
+            else if (value->getType()->isDoubleTy())    
+                return context.getBuilder().CreateBinOp(llvm::Instruction::FMul, value, value);
+            else
+                throw CodegenException("Incompatible type in sqr(): expected char");
+        }
+        else if (name == SysFunc::Chr)
+        {
+            
+        }
+        else if (name == SysFunc::Ord)
+        {
         
+        }
+        else if (name == SysFunc::Pred)
+        {
+            
+        }
+        else if (name == SysFunc::Succ)
+        {
+            
+        }
     }
-
-   
-
-
-} // namespace fpc
