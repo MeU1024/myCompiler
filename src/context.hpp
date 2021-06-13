@@ -16,9 +16,9 @@ namespace fpc
     class ArrayTypeNode;
     class RecordTypeNode;  
 
-    class CodegenException : public std::exception {
+    class CodegenExcep : public std::exception {
     public:
-        explicit CodegenException(const std::string &description) : description(description) {};
+        explicit CodegenExcep(const std::string &description) : description(description) {};
         const char *what() const noexcept {
             return description.c_str();
         }
@@ -62,7 +62,6 @@ namespace fpc
 
     public:
 
-    //TODO:变量意义
         bool is_subroutine;
         std::list<std::string> traces;
         llvm::Function *printfFunc, *sprintfFunc, *scanfFunc, *absFunc, *fabsFunc, *sqrtFunc, *strcpyFunc, *strcatFunc, *getcharFunc, *strlenFunc, *atoiFunc;
@@ -70,13 +69,11 @@ namespace fpc
         std::unique_ptr<llvm::legacy::FunctionPassManager> fpm;
         std::unique_ptr<llvm::legacy::PassManager> mpm;
 
-        std::ofstream &log() { return of; }
+       // std::ofstream &log() { return of; }
 
         static std::string getLLVMTypeName(const llvm::Type *ty)
         {
-            // static std::map<int, std::string> typeIDMap = {
-            //     {11, "INTEGER/CHAR/BOOL"}, {15, "STRING"}, {3, "DOUBLE"}, {14, "ARRAY/STRING"}, {13, "RECORD"}, {11, "FUNCTION"}
-            // };
+            
             int id = ty->getTypeID();
             llvm::Type *arrTy;
             switch (id)
@@ -111,7 +108,7 @@ namespace fpc
             : builder(llvm::IRBuilder<>(llvm_context)), _module(std::make_unique<llvm::Module>(module_id, llvm_context)), is_subroutine(false), of("compile.log")
         {
             if (of.fail())
-                throw CodegenException("Fails to open compile log");
+                throw CodegenExcep("Fails to open compile log");
 
             createTempStr();
 
@@ -171,7 +168,7 @@ namespace fpc
         {
             auto *value = _module->getGlobalVariable("__tmp_str");
             if (value == nullptr)
-                throw CodegenException("Global temp string not found");
+                throw CodegenExcep("Global temp string not found");
             llvm::Value *zero = llvm::ConstantInt::getSigned(builder.getInt32Ty(), 0);
             return builder.CreateInBoundsGEP(value, {zero, zero});
         }
@@ -224,7 +221,7 @@ namespace fpc
                 return nullptr;
             llvm::Constant *val = V->second;
             if (!val->getType()->isIntegerTy())
-                throw CodegenException("Case branch must be integer type!");
+                throw CodegenExcep("Case branch must be integer type!");
             return llvm::cast<llvm::ConstantInt>(val);
         };
         bool setConstVal(const std::string &key, llvm::Constant* value) 
@@ -330,3 +327,4 @@ namespace fpc
 
 
 #endif
+
