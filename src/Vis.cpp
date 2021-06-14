@@ -36,32 +36,46 @@ void fpc::ASTvis::travProgram(const std::shared_ptr<fpc::ProgramNode>& prog)
     travRoutineBody(fpc::cast_node<fpc::BaseRoutineNode>(prog));
 }
 
+
 void fpc::ASTvis::travRoutineBody(const std::shared_ptr<fpc::BaseRoutineNode>& prog)
 {
-   
+    AddNode("INIT");
+    //travInit(prog->init_part);
+    stk_.pop();
+
     AddNode("CONST");
-    travCONST(prog->header->constList);
+    travCONST(prog->routine_head->constList);
     stk_.pop();
 
     AddNode("TYPE");
-    travTYPE(prog->header->typeList);
+    travTYPE(prog->routine_head->typeList);
     stk_.pop();
 
     AddNode("VAR");
-    travVAR(prog->header->varList);
+    travVAR(prog->routine_head->varList);
     stk_.pop();
 
     AddNode("PROC_FUNC");
-    travSubprocList(prog->header->subroutineList);
+    travSubprocList(prog->routine_head->subroutineList);
     stk_.pop();
 
     AddNode("STMT");
-    travCompound(prog->body);
+    travCompound(prog->routine_body);
     stk_.pop();
 
     return;
 }
-//TODO:类型有问题
+
+void fpc::ASTvis::travInit(const std::shared_ptr<InitNode>& InitAST){
+    
+    if (InitAST->content != ""){
+    AddNode(InitAST->content);
+    stk_.pop();
+    }
+    
+    return;
+}
+
 void fpc::ASTvis::travCONST(const std::shared_ptr<fpc::ConstDeclList>& const_declListAST)
 {
     std::list<std::shared_ptr<ConstDeclNode>>& constList(const_declListAST->getChildren());
@@ -243,10 +257,10 @@ void fpc::ASTvis::travCompound(const std::shared_ptr<fpc::CompoundStmtNode>& com
             travStmt(fpc::cast_node<fpc::AssignStmtNode>(p));
             stk_.pop();
         }
-        else if (fpc::is_ptr_of<fpc::CaseStmtNode>(p))
+        else if (fpc::is_ptr_of<fpc::SwitchStmtNode>(p))
         {
             AddNode("Case Statement");
-            travStmt(fpc::cast_node<fpc::CaseStmtNode>(p));
+            travStmt(fpc::cast_node<fpc::SwitchStmtNode>(p));
             stk_.pop();
         }
 
@@ -254,8 +268,8 @@ void fpc::ASTvis::travCompound(const std::shared_ptr<fpc::CompoundStmtNode>& com
     return;
 }
 
-//TODO:待添加
-void fpc::ASTvis::travStmt(const std::shared_ptr<fpc::CaseStmtNode>&p_stmp)
+//TODO:
+void fpc::ASTvis::travStmt(const std::shared_ptr<fpc::SwitchStmtNode>&p_stmp)
 {
     if (p_stmp == nullptr) return;
     std::list<std::shared_ptr<fpc::CaseBranchNode>>& stmtList(p_stmp->branches);
@@ -266,8 +280,8 @@ void fpc::ASTvis::travStmt(const std::shared_ptr<fpc::CaseStmtNode>&p_stmp)
         std::string br;
         if (fpc::is_ptr_of<fpc::IntegerNode>(p->branch))
             br = std::to_string(fpc::cast_node<IntegerNode>(p->branch)->val);
-        else if (fpc::is_ptr_of<fpc::IdentifierNode>(p->branch))
-            br = fpc::cast_node<fpc::IdentifierNode>(p->branch)->name;
+        else if (fpc::is_ptr_of<fpc::IdNode>(p->branch))
+            br = fpc::cast_node<fpc::IdNode>(p->branch)->name;
         travCompound(p->stmt);
 
     }
@@ -302,17 +316,30 @@ void fpc::ASTvis::travStmt(const std::shared_ptr<fpc::WhileStmtNode>&p_stmp)
 void fpc::ASTvis::travStmt(const std::shared_ptr<fpc::ForStmtNode>&p_stmp)
 {
     if (p_stmp == nullptr) return;
-   travExpr(p_stmp->init_val);
+    AddNode("init value");
+    travExpr(p_stmp->init_val);
+    stk_.pop();
+    AddNode("end value");
     travExpr(p_stmp->end_val);
+    stk_.pop();
+    AddNode("For Body");
     travCompound(p_stmp->stmt);
+    stk_.pop();
 
     return;
 }
 void fpc::ASTvis::travStmt(const std::shared_ptr<fpc::RepeatStmtNode>&p_stmp)
 {
     if (p_stmp == nullptr) return;
+    AddNode("Repeat Times");
     travExpr(p_stmp->expr);
+    stk_.pop();
+    AddNode("Counter");
+    travExpr(p_stmp->id);
+    stk_.pop();
+    AddNode("Repeat Body");
     travCompound(p_stmp->stmt);
+    stk_.pop();
 
     return;
 }
@@ -335,8 +362,8 @@ void fpc::ASTvis::travExpr(const std::shared_ptr<ExprNode>& expr)
 {
     if (fpc::is_ptr_of<fpc::BinaryExprNode>(expr))
         travExpr(fpc::cast_node<fpc::BinaryExprNode>(expr));
-    else if (fpc::is_ptr_of<fpc::IdentifierNode>(expr))
-        travExpr(fpc::cast_node<IdentifierNode>(expr));
+    else if (fpc::is_ptr_of<fpc::IdNode>(expr))
+        travExpr(fpc::cast_node<IdNode>(expr));
     else if (fpc::is_ptr_of<fpc::ConstValueNode>(expr))
         travExpr(fpc::cast_node<ConstValueNode>(expr));
     else if (fpc::is_ptr_of<fpc::ArrayRefNode>(expr))
@@ -358,7 +385,7 @@ void fpc::ASTvis::travExpr(const std::shared_ptr<BinaryExprNode>& expr)
     switch (expr->op)
     {
         case fpc::BinaryOp::Eq: label.append("==");break;
-        case fpc::BinaryOp::Neq: label.append("!=");break;
+        case fpc::BinaryOp::Neq: label.append("<>");break;
         case fpc::BinaryOp::Leq: label.append("<=");break;
         case fpc::BinaryOp::Geq: label.append(">=");break;
         case fpc::BinaryOp::Lt: label.append("<");break;
@@ -392,7 +419,7 @@ void fpc::ASTvis::travExpr(const std::shared_ptr<fpc::ConstValueNode>& expr)
     return;
 }
 
-void fpc::ASTvis::travExpr(const std::shared_ptr<fpc::IdentifierNode>& expr)
+void fpc::ASTvis::travExpr(const std::shared_ptr<fpc::IdNode>& expr)
 {
     if (expr == nullptr) return;
    
@@ -402,6 +429,23 @@ void fpc::ASTvis::travExpr(const std::shared_ptr<fpc::IdentifierNode>& expr)
     return;
 }
 
+//TODO:TEST
+void fpc::ASTvis::travExpr(const std::shared_ptr<fpc::ArrayRefNode>& expr)
+{
+    if (expr == nullptr) return;
+    AddNode("Array");
+    stk_.pop();
+
+    return;
+}
+
+void fpc::ASTvis::travExpr(const std::shared_ptr<fpc::RecordRefNode>& expr)
+{
+    if (expr == nullptr) return;
+    AddNode("Record");
+    stk_.pop();
+    return;
+}
 
 void fpc::ASTvis::travExpr(const std::shared_ptr<fpc::ProcNode>& expr)
 {
@@ -409,5 +453,36 @@ void fpc::ASTvis::travExpr(const std::shared_ptr<fpc::ProcNode>& expr)
     return;
 }
 
+//TODO:
+void fpc::ASTvis::travExpr(const std::shared_ptr<fpc::CustomProcNode>& expr)
+{
+    if (expr == nullptr) return;
+    return;
+}
 
+void fpc::ASTvis::travExpr(const std::shared_ptr<fpc::SysProcNode>& expr)
+{
+    if (expr == nullptr) return;
+   
+    std::string label;
+    label.append("SysFunc:");
+    switch (expr->name)
+    {
+        case fpc::SysFunc::Read:  label.append("read()"); break;
+        case fpc::SysFunc::Write: label.append("write()"); break;
+        case fpc::SysFunc::Writeln:label.append( "writeln()");  break;
+        case fpc::SysFunc::Abs: label.append( "abs()"); break;
+        case fpc::SysFunc::Chr: label.append( "chr()"); break;
+        case fpc::SysFunc::Odd: label.append( "odd()"); break;
+        case fpc::SysFunc::Ord: label.append( "ord()"); break;
+        case fpc::SysFunc::Pred: label.append( "pred()"); break;
+        case fpc::SysFunc::Sqr: label.append( "sqr()"); break;
+        case fpc::SysFunc::Sqrt: label.append( "sqrt()"); break;
+        case fpc::SysFunc::Succ: label.append( "succ()"); break;
+    }
+    AddNode(label);
+    stk_.pop();
+    return;
+
+}
 

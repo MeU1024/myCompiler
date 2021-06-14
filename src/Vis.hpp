@@ -1,7 +1,7 @@
 #ifndef __VIS__H__
 #define __VIS__H__
 
-#include "../basis.hpp"
+#include "basis.hpp"
 
 #include <fstream>
 #include <stack>
@@ -24,6 +24,7 @@ namespace fpc {
         void travProgram(const std::shared_ptr<ProgramNode>& prog);
         void travRoutineBody(const std::shared_ptr<BaseRoutineNode>& prog);
 
+        void travInit(const std::shared_ptr<InitNode>& InitAST);
         void travCONST(const std::shared_ptr<ConstDeclList>& const_declListAST);
         void travTYPE(const std::shared_ptr<TypeDeclList>& type_declListAST);
         void travVAR(const std::shared_ptr<VarDeclList>& var_declListAST);
@@ -38,13 +39,12 @@ namespace fpc {
         void travStmt(const std::shared_ptr<RepeatStmtNode>&p_stmp);
         void travStmt(const std::shared_ptr<ProcStmtNode>&p_stmp);
         void travStmt(const std::shared_ptr<AssignStmtNode>&p_stmp);
-        void travStmt(const std::shared_ptr<CaseStmtNode>&p_stmp);
+        void travStmt(const std::shared_ptr<SwitchStmtNode>&p_stmp);
 
         void travExpr(const std::shared_ptr<ExprNode>& expr);
         void travExpr(const std::shared_ptr<BinaryExprNode>& expr);
-        void travExpr(const std::shared_ptr<fpc::IdentifierNode>& expr);
+        void travExpr(const std::shared_ptr<fpc::IdNode>& expr);
         void travExpr(const std::shared_ptr<fpc::ConstValueNode>& expr);
-        // void travExpr(const std::shared_ptr<UnaryExprNode>& expr);
         void travExpr(const std::shared_ptr<ArrayRefNode>& expr);
         void travExpr(const std::shared_ptr<RecordRefNode>& expr);
         void travExpr(const std::shared_ptr<ProcNode>& expr);
