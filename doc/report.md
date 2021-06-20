@@ -183,6 +183,30 @@ switch(op)
 
 ##### 4.2.7 赋值语句
 
+赋值语句的大致流程为，获取左值的assign指针，对右值使用codegen方法。然后对左右值的type进行一个判断。如有需要进行一个转换。如整数浮点数：
+
+```c++
+ if (lhs_type->isDoubleTy() && rhs_type->isIntegerTy(32))
+        {
+            rhs = context.getBuilder().CreateSIToFP(rhs, context.getBuilder().getDoubleTy());
+        }
+ else if (lhs_type->isIntegerTy(32) && rhs_type->isDoubleTy())
+        {
+            auto *rhsSI = context.getBuilder().CreateFPToSI(rhs, lhs_type);
+            std::cerr << "Warning: Assigning REAL type to INTEGER type, this may lose information" << std::endl;
+            context.getBuilder().CreateStore(rhsSI, lhs);
+            return nullptr;
+        }
+```
+
+最后使用CreateStore方法完成赋值。
+
+```c++
+context.getBuilder().CreateStore(rhs, lhs);
+```
+
+
+
 ##### 4.2.8 main函数
 
 构建main函数的函数类型并创建函数实例，将main函数存入trace，之后构造一个基础块作为指令的插入点，递归调用Routine的代码生成。同时
@@ -200,8 +224,8 @@ switch(op)
         auto *mainFunc = llvm::Function::Create(funcT, llvm::Function::ExternalLinkage, "main", *context.getModule());
         auto *block = llvm::BasicBlock::Create(context.getModule()->getContext(), "entry", mainFunc);
         context.getBuilder().SetInsertPoint(block);
-
-        
+		
+        //添加initial part
         if(init_part->content !="")init_part->codegen(context);
 
         //添加变量常量list
@@ -226,7 +250,33 @@ switch(op)
 
 ##### 4.2.9 routine实现
 
-Routine包含了常量声明、变量声明、类型声明、子routine声明、函数体声明，该节点只需要依此调用子节点的codegen方法即可
+Routine包含了常量声明、变量声明、类型声明、子routine声明、函数体声明，该节点只需要先确定参数、返回值，创建函数和基本块，然后依此调用子节点的codegen方法即可。
+
+```c++
+//处理参数和返回值
+//...
+
+//insert block
+auto *funcTy = llvm::FunctionType::get(retTy, types, false);
+auto *func = llvm::Function::Create(funcTy, llvm::Function::ExternalLinkage, name->name, *context.getModule());
+auto *block = llvm::BasicBlock::Create(context.getModule()->getContext(), "entry", func);
+context.getBuilder().SetInsertPoint(block);
+
+//....
+
+routine_head->constList->codegen(context);
+routine_head->typeList->codegen(context);
+routine_head->varList->codegen(context);
+routine_head->subroutineList->codegen(context);
+
+routine_body->codegen(context);
+
+//...
+
+context.traces.pop_back();  
+```
+
+
 
 ##### 4.2.10 声明
 
@@ -316,11 +366,107 @@ Routine包含了常量声明、变量声明、类型声明、子routine声明、
 
 ##### 4.2.13 循环语句
 
-- for 语句
 - while 语句
+
+  while我们通过while，loop，cont这几个基本块实现。首先无条件跳转至while块，在while块插入代码，然后是根据cond判断的条件跳转，如果为真，转至loop块，否则为cont块。loop块末尾插入无条件跳转至while块代码。
+
+  ```c++
+   auto *func = context.getBuilder().GetInsertBlock()->getParent();
+          auto *while_block = llvm::BasicBlock::Create(context.getModule()->getContext(), "while", func);
+          auto *loop_block = llvm::BasicBlock::Create(context.getModule()->getContext(), "loop", func);
+          auto *cont_block = llvm::BasicBlock::Create(context.getModule()->getContext(), "cont");
+          context.getBuilder().CreateBr(while_block);
+  
+          context.getBuilder().SetInsertPoint(while_block);
+          auto *cond = expr->codegen(context);
+          if (!cond->getType()->isIntegerTy(1))
+          { throw CodegenExcep("Incompatible type in while condition: expected boolean"); }
+          context.getBuilder().CreateCondBr(cond, loop_block, cont_block);
+  
+          context.getBuilder().SetInsertPoint(loop_block);
+          stmt->codegen(context);
+          context.getBuilder().CreateBr(while_block);
+  
+          func->getBasicBlockList().push_back(cont_block);
+          context.getBuilder().SetInsertPoint(cont_block);
+          return nullptr;
+  ```
+
+  
+
+- for 语句
+
+  for语句在while的基础上实现，将相应的条件转为比较的BinaryExprNode，在原循环语句最后添加一个自增语句。然后新建节点WhileStmtNode，使用codegen方法生成。
+
+  ```c++
+  if (!id->codegen(context)->getType()->isIntegerTy(32))
+              throw CodegenExcep("Incompatible type in for iterator: expected int");
+  
+          auto init = make_new_node<AssignStmtNode>(id, init_val);
+          auto upto = direction == ForDirection::To;
+          auto cond = make_new_node<BinaryExprNode>(upto ? BinaryOp::Leq : BinaryOp::Geq, id, end_val);
+          auto iter_stmt = make_new_node<AssignStmtNode>(id,
+                  make_new_node<BinaryExprNode>(upto ? BinaryOp::Plus :BinaryOp::Minus, id, make_new_node<IntegerNode>(1)));
+          auto compound = make_new_node<CompoundStmtNode>();
+          compound->merge(stmt); 
+          compound->append(iter_stmt);
+          auto while_stmt = make_new_node<WhileStmtNode>(cond, compound);
+  
+          init->codegen(context);
+          while_stmt->codegen(context);
+          return nullptr;
+  ```
+
+  
+
 - repeat 语句
 
+  pascal中原有的repeat语句和while较为相像，因此我们对repeat语法稍作改动。大致如下：
+
+  ```
+  repeatdo
+  	循环体
+  	times 循环次数 counter 计数器变量;
+  ```
+
+  实现也是基于while语句的实现，和for语句不同的是，还要新增赋值语句节点，即给计数器变量赋值为1。后面的逻辑是类似的。
+
+  ```c++
+  llvm::Value *RepeatStmtNode::codegen(CodegenContext &context)
+      {
+          auto init_value = make_new_node<IntegerNode>(1);
+          auto init = make_new_node<AssignStmtNode>(id, init_value);
+          auto cond = make_new_node<BinaryExprNode>(BinaryOp::Leq, id, expr);
+          auto iter_stmt = make_new_node<AssignStmtNode>(id,
+                  make_new_node<BinaryExprNode>(BinaryOp::Plus, id, make_new_node<IntegerNode>(1)));
+          auto compound = make_new_node<CompoundStmtNode>();
+          compound->merge(stmt); 
+          compound->append(iter_stmt);
+          auto while_stmt = make_new_node<WhileStmtNode>(cond, compound);
+  
+          init->codegen(context);
+          while_stmt->codegen(context);
+          return nullptr;
+      }
+  ```
+
+  
+
 ##### 4.2.14 initial part
+
+该部分为我们设计的新增的部分。功能为在程序开始时打印语句。
+
+```c++
+llvm::Value *InitNode::codegen(CodegenContext &context){
+
+        context.getBuilder().CreateCall(context.printfFunc, context.getBuilder().CreateGlobalStringPtr(content));
+        context.getBuilder().CreateCall(context.printfFunc, context.getBuilder().CreateGlobalStringPtr("\n"));
+        return nullptr;
+
+    }
+```
+
+将InitNode中的content作为需要打印的内容，使用CreateCall方法输出。
 
 ### 第五章 测试案例
 
